@@ -5,19 +5,21 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.Rect;
 import android.support.annotation.Nullable;
 import android.support.v4.content.ContextCompat;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewConfiguration;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class HandsWriteView extends View implements View.OnTouchListener {
 
+    private final int maximumFlingVelocity;
     private List<Points> fingerPoints = new ArrayList<>();
     private List<Points> tempPoints = new ArrayList<>();
 
@@ -34,7 +36,7 @@ public class HandsWriteView extends View implements View.OnTouchListener {
     private boolean isDownAction = true;
     private int pathPaintSortCount = 0;
 
-    private double tempSpace = 0;
+    private int tempVelocity = 0;
     private int tempStroke = 0;
 
     public HandsWriteView(Context context, @Nullable AttributeSet attrs) {
@@ -57,6 +59,7 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         path = new Path();
 
         setOnTouchListener(this);
+        maximumFlingVelocity = ViewConfiguration.get(getContext()).getScaledMaximumFlingVelocity();
     }
 
     @Override
@@ -66,6 +69,7 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         canvas = new Canvas(bitmap);
     }
 
+    private VelocityTracker mVelocityTracker;
     private float p1x = -1, p1y = -1;
 
     @Override
@@ -73,18 +77,25 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         Log.e("onTouch", event.getAction() + "");
         fingerPoints.add(new Points(event.getX(), event.getY()));
         tempPoints.add(new Points(event.getX(), event.getY()));
+        acquireVelocityTracker(event);
+        final VelocityTracker verTracker = mVelocityTracker;
         boolean isUpEvent = false;
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-//                path.moveTo(event.getX(), event.getY());
                 isDownAction = true;
                 lastPointX = event.getX();
                 lastPointY = event.getY();
                 break;
             case MotionEvent.ACTION_MOVE:
+                //求伪瞬时速度
+                verTracker.computeCurrentVelocity(1000, maximumFlingVelocity);
                 break;
             case MotionEvent.ACTION_UP:
                 isUpEvent = true;
+                releaseVelocityTracker();
+                break;
+            case MotionEvent.ACTION_CANCEL:
+                releaseVelocityTracker();
                 break;
         }
 
@@ -114,7 +125,6 @@ public class HandsWriteView extends View implements View.OnTouchListener {
             //4.同理在后面两个点上添加控制点
             p1x = fingerPoints.get(1).x + (fingerPoints.get(2).x - fingerPoints.get(0).x) * rate;
             p1y = fingerPoints.get(1).y + (fingerPoints.get(2).y - fingerPoints.get(0).y) * rate;
-
 //            switch (tempPoints.size() % 5) {
 //                case 0:
 //                    pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.colorAccent));
@@ -137,11 +147,11 @@ public class HandsWriteView extends View implements View.OnTouchListener {
 //            }
             if (isDownAction) {
                 pathPaintSortCount = 0;
-                pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
+                pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithVelocity());
                 isDownAction = false;
             } else {
                 pathPaintSortCount += 1;
-                pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
+                pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithVelocity());
             }
             canvas.drawPath(path, pathPaint);
             invalidate();
@@ -156,33 +166,24 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         return true;
     }
 
-    private int calculatePaintStrokeWidthWithSpace(List<Points> fingerPoints) {
-        double space = 0;
-        for (int i = 0; i < fingerPoints.size() - 1; i++) {
-            float xLength = Math.abs(fingerPoints.get(i).x - fingerPoints.get(i + 1).x);
-            float yLength = Math.abs(fingerPoints.get(i).y - fingerPoints.get(i + 1).y);
-            space += Math.sqrt(xLength * xLength + yLength * yLength);
-        }
-
-        String log;
-        if (pathPaintSortCount == 0) {
-            tempStroke = PATH_STROKE;
-//            log = "起始触点，笔触最大";
-        } else if (tempSpace > space) {    //点序变大且点间距离变长，说明手速加快，笔锋变细
-            if (tempStroke > 3) {
-                tempStroke -= 1;
+    private int calculatePaintStrokeWidthWithVelocity() {
+        if (mVelocityTracker != null) {
+            int v = (int) Math.sqrt(mVelocityTracker.getXVelocity() * mVelocityTracker.getXVelocity()
+                    + mVelocityTracker.getYVelocity() * mVelocityTracker.getYVelocity());
+            Log.e("velocity", v + "");
+            if (pathPaintSortCount == 0) {
+                tempStroke = PATH_STROKE;
+            } else if (tempVelocity > v) {    //手速加快，笔锋变细
+                if (tempStroke > 3) {
+                    tempStroke -= 1;
+                }
+            } else if (tempVelocity < v) {    //手速变慢，笔锋变粗
+                if (tempStroke < PATH_STROKE) {
+                    tempStroke += 1;
+                }
             }
-//            log = "间距增大，笔触变细";
-        } else if (tempSpace < space) {    //点序变大且点间距离变短，说明手速变慢，笔锋变粗
-            if (tempStroke < PATH_STROKE) {
-                tempStroke += 1;
-            }
-//            log = "间距减小，笔触变粗";
-        } else {
-//            log = "space:" + space + " tempSpace:" + tempSpace;
+            tempVelocity = v;
         }
-        tempSpace = space;
-//        Log.e("pathStroke", log + " " + "width:" + tempStroke + " tempSpace:" + tempSpace);
         return tempStroke/*PATH_STROKE*/;
     }
 
@@ -213,5 +214,31 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
         width = MeasureSpec.getSize(widthMeasureSpec);
         height = MeasureSpec.getSize(heightMeasureSpec);
+    }
+
+    /**
+     * @param event 向VelocityTracker添加MotionEvent
+     * @see android.view.VelocityTracker#obtain()
+     * @see android.view.VelocityTracker#addMovement(MotionEvent)
+     */
+    private void acquireVelocityTracker(final MotionEvent event) {
+        if (null == mVelocityTracker) {
+            mVelocityTracker = VelocityTracker.obtain();
+        }
+        mVelocityTracker.addMovement(event);
+    }
+
+    /**
+     * 释放VelocityTracker
+     *
+     * @see android.view.VelocityTracker#clear()
+     * @see android.view.VelocityTracker#recycle()
+     */
+    private void releaseVelocityTracker() {
+        if (null != mVelocityTracker) {
+            mVelocityTracker.clear();
+            mVelocityTracker.recycle();
+            mVelocityTracker = null;
+        }
     }
 }
