@@ -7,5 +7,13 @@
 
     <color name="colorPath">#C4176C77</color>
 
+    <color name="orange">#F77B3D</color>
+    <color name="purple">#F73DF4</color>
+    <color name="yellow">#FCD857</color>
+    <color name="black">#0A0A0A</color>
+    <color name="red">#FF0000</color>
+    <color name="green">#95FF79</color>
+    <color name="blue">#5399FF</color>
+
 
 </resources>

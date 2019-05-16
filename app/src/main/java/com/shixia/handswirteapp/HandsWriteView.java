@@ -2,7 +2,6 @@ package com.shixia.handswirteapp;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -26,12 +25,14 @@ public class HandsWriteView extends View implements View.OnTouchListener {
     private Paint pathPaint;
     private Path path;
 
-    private static final int PATH_STROKE = 5;
+    private static final int PATH_STROKE = 10;
     private int width, height;
     private Bitmap bitmap;
     private Canvas canvas;
 
     private float lastPointX, lastPointY;
+    private boolean isDownAction = true;
+    private int pathPaintSortCount = 0;
 
     public HandsWriteView(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
@@ -48,7 +49,7 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         pathPaint.setStrokeWidth(PATH_STROKE);
         pathPaint.setStyle(Paint.Style.STROKE);
         pathPaint.setStrokeJoin(Paint.Join.ROUND);
-        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.colorPath));
+        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.purple));
 
         path = new Path();
 
@@ -70,7 +71,10 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         boolean isUpEvent = false;
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                path.moveTo(event.getX(), event.getY());
+//                path.moveTo(event.getX(), event.getY());
+                isDownAction = true;
+                lastPointX = event.getX();
+                lastPointY = event.getY();
                 break;
             case MotionEvent.ACTION_MOVE:
                 break;
@@ -80,14 +84,24 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         }
         if (isUpEvent) {
             if (fingerPoints.size() == 3) {
+                pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.black));
+                pathPaintSortCount += 1;
+                pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
+                path.moveTo(lastPointX, lastPointY);
                 path.quadTo(fingerPoints.get(1).x, fingerPoints.get(1).y, fingerPoints.get(2).x, fingerPoints.get(2).y);
             } else if (fingerPoints.size() > 3) {
+                pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.red));
+                pathPaintSortCount += 1;
+                pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
+                path.moveTo(lastPointX, lastPointY);
                 path.cubicTo(fingerPoints.get(1).x, fingerPoints.get(1).y, fingerPoints.get(2).x, fingerPoints.get(2).y
                         , fingerPoints.get(3).x, fingerPoints.get(3).y);
             }
+            calculatePaintStrokeWidthWithSpace(fingerPoints);
             canvas.drawPath(path, pathPaint);
             invalidate();
             fingerPoints.clear();
+            path.reset();
         }
         while (fingerPoints.size() > 5) {
             fingerPoints.remove(0);
@@ -110,11 +124,47 @@ public class HandsWriteView extends View implements View.OnTouchListener {
                 //求交点
                 float Ox = (b - q) / (p - a);
                 float Oy = a * Ox + b;
+//                path.cubicTo(fingerPoints.get(1).x, fingerPoints.get(1).y
+//                        , fingerPoints.get(2).x, fingerPoints.get(2).y
+//                        , Ox, Oy);
+                path.moveTo(lastPointX, lastPointY);
                 path.cubicTo(fingerPoints.get(1).x, fingerPoints.get(1).y
                         , fingerPoints.get(2).x, fingerPoints.get(2).y
                         , Ox, Oy);
+                lastPointX = Ox;
+                lastPointY = Oy;
+                switch (tempPoints.size() % 5) {
+                    case 0:
+                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.colorAccent));
+                        break;
+                    case 1:
+                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.blue));
+                        break;
+                    case 2:
+                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.orange));
+                        break;
+                    case 3:
+                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.purple));
+                        break;
+                    case 4:
+                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.yellow));
+                        break;
+                    default:
+                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.green));
+                        break;
+                }
+                calculatePaintStrokeWidthWithSpace(fingerPoints);
+                if (isDownAction) {
+                    pathPaintSortCount = 0;
+                    pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
+                    isDownAction = false;
+                } else {
+                    pathPaintSortCount += 1;
+                    pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
+                }
                 canvas.drawPath(path, pathPaint);
                 invalidate();
+                path.reset();
                 fingerPoints.remove(0);
                 fingerPoints.remove(0);
                 fingerPoints.remove(0);
@@ -132,6 +182,39 @@ public class HandsWriteView extends View implements View.OnTouchListener {
             bottom = Math.max((int) fingerPoints.get(i).y, bottom);
         }
         return new Rect(left - PATH_STROKE, top - PATH_STROKE, right + PATH_STROKE, bottom + PATH_STROKE);
+    }
+
+    private double tempSpace = 0;
+    private int tempStroke = 0;
+
+    private int calculatePaintStrokeWidthWithSpace(List<Points> fingerPoints) {
+        double space = 0;
+        for (int i = 0; i < fingerPoints.size() - 1; i++) {
+            float xLength = Math.abs(fingerPoints.get(i).x - fingerPoints.get(i + 1).x);
+            float yLength = Math.abs(fingerPoints.get(i).y - fingerPoints.get(i + 1).y);
+            space += Math.sqrt(xLength * xLength + yLength * yLength);
+        }
+
+        String log ;
+        if (pathPaintSortCount == 0) {
+            tempStroke = PATH_STROKE;
+            log = "起始触点，笔触最大";
+        } else if (tempSpace > space) {    //点序变大且点间距离变长，说明手速加快，笔锋变细
+            if (tempStroke > 3) {
+                tempStroke -= 1;
+            }
+            log = "间距增大，笔触变细";
+        } else if (tempSpace < space) {    //点序变大且点间距离变短，说明手速变慢，笔锋变粗
+            if (tempStroke < PATH_STROKE) {
+                tempStroke += 1;
+            }
+            log = "间距减小，笔触变粗";
+        } else {
+            log = "space:" + space + " tempSpace:" + tempSpace;
+        }
+        tempSpace = space;
+        Log.e("pathStroke", log + " " + "width:" + tempStroke + " tempSpace:" + tempSpace);
+        return tempStroke;
     }
 
     @Override
