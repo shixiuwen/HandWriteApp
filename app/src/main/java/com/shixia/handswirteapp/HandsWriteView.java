@@ -34,6 +34,9 @@ public class HandsWriteView extends View implements View.OnTouchListener {
     private boolean isDownAction = true;
     private int pathPaintSortCount = 0;
 
+    private double tempSpace = 0;
+    private int tempStroke = 0;
+
     public HandsWriteView(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
 
@@ -63,6 +66,8 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         canvas = new Canvas(bitmap);
     }
 
+    private float p1x = -1, p1y = -1;
+
     @Override
     public boolean onTouch(View v, MotionEvent event) {
         Log.e("onTouch", event.getAction() + "");
@@ -82,110 +87,74 @@ public class HandsWriteView extends View implements View.OnTouchListener {
                 isUpEvent = true;
                 break;
         }
-        if (isUpEvent) {
-            if (fingerPoints.size() == 3) {
-                pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.black));
-                pathPaintSortCount += 1;
-                pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
-                path.moveTo(lastPointX, lastPointY);
-                path.quadTo(fingerPoints.get(1).x, fingerPoints.get(1).y, fingerPoints.get(2).x, fingerPoints.get(2).y);
-            } else if (fingerPoints.size() > 3) {
-                pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.red));
-                pathPaintSortCount += 1;
-                pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
-                path.moveTo(lastPointX, lastPointY);
-                path.cubicTo(fingerPoints.get(1).x, fingerPoints.get(1).y, fingerPoints.get(2).x, fingerPoints.get(2).y
-                        , fingerPoints.get(3).x, fingerPoints.get(3).y);
+
+        while (fingerPoints.size() > 3) {
+            fingerPoints.remove(0);
+        }
+        if (fingerPoints.size() == 3) {
+            Log.e("fingerPoints：", fingerPoints.size() + " action:" + event.getAction());
+            //1.斜率计算
+            float a = (fingerPoints.get(2).y - fingerPoints.get(0).y) / (fingerPoints.get(2).x - fingerPoints.get(0).x);
+            //2.方程 y = ax + b 中的常数b计算，确定切线方程 y = ax + b
+            float b = fingerPoints.get(1).y - a * fingerPoints.get(1).x;
+            //3.
+            float p2x, p2y;
+            //如果斜率大于1，通过y点确定x点，否则相反
+            float rate = 0.25F;
+            p2x = fingerPoints.get(1).x - (fingerPoints.get(1).x - fingerPoints.get(0).x) * rate;
+            p2y = fingerPoints.get(1).y - (fingerPoints.get(1).y - fingerPoints.get(0).y) * rate;
+            path.moveTo(lastPointX, lastPointY);
+            if (p1x == -1 || p1y == -1) {//最开始的三个点
+                p1x = Math.min(fingerPoints.get(0).x, p2x) + Math.abs(fingerPoints.get(0).x - p2x) / 2;
+                p1y = a * p1x + b;
             }
-            calculatePaintStrokeWidthWithSpace(fingerPoints);
+            path.cubicTo(p1x, p1y, p2x, p2y, fingerPoints.get(1).x, fingerPoints.get(1).y);
+            lastPointX = fingerPoints.get(1).x;
+            lastPointY = fingerPoints.get(1).y;
+            //4.同理在后面两个点上添加控制点
+            p1x = fingerPoints.get(1).x + (fingerPoints.get(2).x - fingerPoints.get(0).x) * rate;
+            p1y = fingerPoints.get(1).y + (fingerPoints.get(2).y - fingerPoints.get(0).y) * rate;
+
+//            switch (tempPoints.size() % 5) {
+//                case 0:
+//                    pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.colorAccent));
+//                    break;
+//                case 1:
+//                    pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.blue));
+//                    break;
+//                case 2:
+//                    pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.orange));
+//                    break;
+//                case 3:
+//                    pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.purple));
+//                    break;
+//                case 4:
+//                    pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.yellow));
+//                    break;
+//                default:
+//                    pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.green));
+//                    break;
+//            }
+            if (isDownAction) {
+                pathPaintSortCount = 0;
+                pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
+                isDownAction = false;
+            } else {
+                pathPaintSortCount += 1;
+                pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
+            }
             canvas.drawPath(path, pathPaint);
             invalidate();
+            path.reset();
+            fingerPoints.remove(0);
+        }
+        if (isUpEvent) {
+            p1x = p1y = -1;
             fingerPoints.clear();
             path.reset();
         }
-        while (fingerPoints.size() > 5) {
-            fingerPoints.remove(0);
-        }
-        if (fingerPoints.size() == 5) {
-            Log.e("fingerPoints：", fingerPoints.size() + " action:" + event.getAction());
-            //1.斜率计算
-            float a = (fingerPoints.get(4).y - fingerPoints.get(2).y) / (fingerPoints.get(4).x - fingerPoints.get(2).x);
-            //2.方程 y = ax + b 中的常数b计算，确定切线方程 y = ax + b
-            float b = fingerPoints.get(4).y - a * fingerPoints.get(4).x;
-            //3.判断当前的数据点（前面一条线的终点，后面一条线的起点）是否在前后点的矩形中，如果不是，做调整，如果是，根据x,y坐标调整改点位置，
-            if ((fingerPoints.get(3).x > Math.min(fingerPoints.get(2).x, fingerPoints.get(4).x)
-                    && fingerPoints.get(3).x < Math.max(fingerPoints.get(2).x, fingerPoints.get(4).x)
-                    && fingerPoints.get(3).y > Math.min(fingerPoints.get(2).y, fingerPoints.get(4).y)
-                    && fingerPoints.get(3).y < Math.max(fingerPoints.get(2).y, fingerPoints.get(4).y))) {
-                //4.将控制点移到切线上（修改控制点），第一条曲线后一个控制点做切线垂线的交点
-                float p = -1 / a;
-                float q = fingerPoints.get(3).y - p * fingerPoints.get(3).x;
-                //求得垂线方程 y = px + q
-                //求交点
-                float Ox = (b - q) / (p - a);
-                float Oy = a * Ox + b;
-//                path.cubicTo(fingerPoints.get(1).x, fingerPoints.get(1).y
-//                        , fingerPoints.get(2).x, fingerPoints.get(2).y
-//                        , Ox, Oy);
-                path.moveTo(lastPointX, lastPointY);
-                path.cubicTo(fingerPoints.get(1).x, fingerPoints.get(1).y
-                        , fingerPoints.get(2).x, fingerPoints.get(2).y
-                        , Ox, Oy);
-                lastPointX = Ox;
-                lastPointY = Oy;
-                switch (tempPoints.size() % 5) {
-                    case 0:
-                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.colorAccent));
-                        break;
-                    case 1:
-                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.blue));
-                        break;
-                    case 2:
-                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.orange));
-                        break;
-                    case 3:
-                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.purple));
-                        break;
-                    case 4:
-                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.yellow));
-                        break;
-                    default:
-                        pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.green));
-                        break;
-                }
-                calculatePaintStrokeWidthWithSpace(fingerPoints);
-                if (isDownAction) {
-                    pathPaintSortCount = 0;
-                    pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
-                    isDownAction = false;
-                } else {
-                    pathPaintSortCount += 1;
-                    pathPaint.setStrokeWidth(calculatePaintStrokeWidthWithSpace(fingerPoints));
-                }
-                canvas.drawPath(path, pathPaint);
-                invalidate();
-                path.reset();
-                fingerPoints.remove(0);
-                fingerPoints.remove(0);
-                fingerPoints.remove(0);
-            }
-        }
         return true;
     }
-
-    private Rect getInvalidateRec(List<Points> fingerPoints) {
-        int left = 10000, top = 10000, right = 0, bottom = 0;
-        for (int i = 0; i < fingerPoints.size(); i++) {
-            left = Math.min((int) fingerPoints.get(i).x, left);
-            top = Math.min((int) fingerPoints.get(i).y, top);
-            right = Math.max((int) fingerPoints.get(i).x, right);
-            bottom = Math.max((int) fingerPoints.get(i).y, bottom);
-        }
-        return new Rect(left - PATH_STROKE, top - PATH_STROKE, right + PATH_STROKE, bottom + PATH_STROKE);
-    }
-
-    private double tempSpace = 0;
-    private int tempStroke = 0;
 
     private int calculatePaintStrokeWidthWithSpace(List<Points> fingerPoints) {
         double space = 0;
@@ -195,26 +164,26 @@ public class HandsWriteView extends View implements View.OnTouchListener {
             space += Math.sqrt(xLength * xLength + yLength * yLength);
         }
 
-        String log ;
+        String log;
         if (pathPaintSortCount == 0) {
             tempStroke = PATH_STROKE;
-            log = "起始触点，笔触最大";
+//            log = "起始触点，笔触最大";
         } else if (tempSpace > space) {    //点序变大且点间距离变长，说明手速加快，笔锋变细
             if (tempStroke > 3) {
                 tempStroke -= 1;
             }
-            log = "间距增大，笔触变细";
+//            log = "间距增大，笔触变细";
         } else if (tempSpace < space) {    //点序变大且点间距离变短，说明手速变慢，笔锋变粗
             if (tempStroke < PATH_STROKE) {
                 tempStroke += 1;
             }
-            log = "间距减小，笔触变粗";
+//            log = "间距减小，笔触变粗";
         } else {
-            log = "space:" + space + " tempSpace:" + tempSpace;
+//            log = "space:" + space + " tempSpace:" + tempSpace;
         }
         tempSpace = space;
-        Log.e("pathStroke", log + " " + "width:" + tempStroke + " tempSpace:" + tempSpace);
-        return tempStroke;
+//        Log.e("pathStroke", log + " " + "width:" + tempStroke + " tempSpace:" + tempSpace);
+        return tempStroke/*PATH_STROKE*/;
     }
 
     @Override
@@ -223,9 +192,9 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         Log.e("fingerPoints：", "ondraw");
 //        canvas.drawPath(path, pathPaint);
         canvas.drawBitmap(bitmap, 0, 0, pointPaint);
-        for (int i = 0; i < tempPoints.size(); i++) {
-            canvas.drawPoint(tempPoints.get(i).x, tempPoints.get(i).y, pointPaint);
-        }
+//        for (int i = 0; i < tempPoints.size(); i++) {
+//            canvas.drawPoint(tempPoints.get(i).x, tempPoints.get(i).y, pointPaint);
+//        }
     }
 
     class Points {
