@@ -3,6 +3,7 @@ package com.shixia.handswirteapp;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.CornerPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.support.annotation.Nullable;
@@ -39,6 +40,8 @@ public class HandsWriteView extends View implements View.OnTouchListener {
     private int tempVelocity = 0;
     private int tempStroke = 0;
 
+    private boolean isRealPenStyle = true;
+
     public HandsWriteView(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
 
@@ -54,6 +57,7 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         pathPaint.setStrokeWidth(PATH_STROKE);
         pathPaint.setStyle(Paint.Style.STROKE);
         pathPaint.setStrokeJoin(Paint.Join.ROUND);
+        pathPaint.setPathEffect(new CornerPathEffect(200));
         pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.purple));
 
         path = new Path();
@@ -114,6 +118,7 @@ public class HandsWriteView extends View implements View.OnTouchListener {
             float rate = 0.25F;
             p2x = fingerPoints.get(1).x - (fingerPoints.get(1).x - fingerPoints.get(0).x) * rate;
             p2y = fingerPoints.get(1).y - (fingerPoints.get(1).y - fingerPoints.get(0).y) * rate;
+//            p2y = a * p2x + b;
             path.moveTo(lastPointX, lastPointY);
             if (p1x == -1 || p1y == -1) {//最开始的三个点
                 p1x = Math.min(fingerPoints.get(0).x, p2x) + Math.abs(fingerPoints.get(0).x - p2x) / 2;
@@ -125,6 +130,7 @@ public class HandsWriteView extends View implements View.OnTouchListener {
             //4.同理在后面两个点上添加控制点
             p1x = fingerPoints.get(1).x + (fingerPoints.get(2).x - fingerPoints.get(0).x) * rate;
             p1y = fingerPoints.get(1).y + (fingerPoints.get(2).y - fingerPoints.get(0).y) * rate;
+//            p1y = a * p1x + b;
 //            switch (tempPoints.size() % 5) {
 //                case 0:
 //                    pathPaint.setColor(ContextCompat.getColor(getContext(), R.color.colorAccent));
@@ -166,6 +172,15 @@ public class HandsWriteView extends View implements View.OnTouchListener {
         return true;
     }
 
+    /**
+     * 是否使用真实的笔触样式
+     *
+     * @param isRealPenStyle
+     */
+    public void setRealPenStyle(boolean isRealPenStyle) {
+        this.isRealPenStyle = isRealPenStyle;
+    }
+
     private int calculatePaintStrokeWidthWithVelocity() {
         if (mVelocityTracker != null) {
             int v = (int) Math.sqrt(mVelocityTracker.getXVelocity() * mVelocityTracker.getXVelocity()
@@ -174,7 +189,7 @@ public class HandsWriteView extends View implements View.OnTouchListener {
             if (pathPaintSortCount == 0) {
                 tempStroke = PATH_STROKE;
             } else if (tempVelocity > v) {    //手速加快，笔锋变细
-                if (tempStroke > 3) {
+                if (tempStroke > 2) {
                     tempStroke -= 1;
                 }
             } else if (tempVelocity < v) {    //手速变慢，笔锋变粗
@@ -184,7 +199,7 @@ public class HandsWriteView extends View implements View.OnTouchListener {
             }
             tempVelocity = v;
         }
-        return tempStroke/*PATH_STROKE*/;
+        return isRealPenStyle ? tempStroke : PATH_STROKE;
     }
 
     @Override
